@@ -38,3 +38,14 @@ def logout(response: Response):
 @router.get("/me")
 def me(user: models.User = Depends(get_current_user)):
     return {"user": serializers.user_out(user)}
+
+
+@router.patch("/me/language")
+def set_my_language(payload: schemas.LanguageIn, db: Session = Depends(get_db),
+                     user: models.User = Depends(get_current_user)):
+    """Any signed-in user can switch their own dashboard language - no admin needed."""
+    if payload.language not in ("en", "ar"):
+        raise HTTPException(status_code=400, detail="language must be 'en' or 'ar'")
+    user.language = payload.language
+    db.commit()
+    return {"user": serializers.user_out(user)}

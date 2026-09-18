@@ -56,6 +56,8 @@ def update_user(user_id: int, payload: schemas.UserUpdateIn, db: Session = Depen
         target.phone = payload.phone
     if payload.active is not None:
         target.active = payload.active
+    if payload.language is not None:
+        target.language = payload.language
     if payload.password:
         target.password_hash = hash_password(payload.password)
     log_action(db, user, "user", target.id, "update")
