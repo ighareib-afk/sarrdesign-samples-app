@@ -1,0 +1,526 @@
+[
+  {
+    "code": "SD1090-D-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD1090-D-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1090-D-SCP",
+    "qty": 2
+  },
+  {
+    "code": "SD1093-D-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1093-D-SCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1098-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1080-D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1070-D-SGP",
+    "qty": 12
+  },
+  {
+    "code": "SD1070-D-SRG",
+    "qty": 16
+  },
+  {
+    "code": "SD1072-D-CP",
+    "qty": 3
+  },
+  {
+    "code": "SD1072-D-SGP",
+    "qty": 13
+  },
+  {
+    "code": "SD1072-D-SRG",
+    "qty": 6
+  },
+  {
+    "code": "SD1060-D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1061-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1252-D-CP",
+    "qty": 5
+  },
+  {
+    "code": "SD1252-D-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1252-D-SCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1252-D-BCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1252-D-BGP",
+    "qty": 1
+  },
+  {
+    "code": "SD1255-D-CP",
+    "qty": 13
+  },
+  {
+    "code": "SD1255-D-BC",
+    "qty": 2
+  },
+  {
+    "code": "SD1255-D-SCP",
+    "qty": 2
+  },
+  {
+    "code": "SD1255-D-SRG",
+    "qty": 1
+  },
+  {
+    "code": "SD1253-CP",
+    "qty": 8
+  },
+  {
+    "code": "SD1253-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1253-WGP",
+    "qty": 10
+  },
+  {
+    "code": "SD1253-WRG",
+    "qty": 10
+  },
+  {
+    "code": "SD1258-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1040-D-SGP",
+    "qty": 7
+  },
+  {
+    "code": "SD1040-D-SRG",
+    "qty": 21
+  },
+  {
+    "code": "SD1048-D-GP",
+    "qty": 2
+  },
+  {
+    "code": "SD1048-D-SGP",
+    "qty": 7
+  },
+  {
+    "code": "SD1043-D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1043-D-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1043-D-SGP",
+    "qty": 2
+  },
+  {
+    "code": "SD1043-D-SRG",
+    "qty": 20
+  },
+  {
+    "code": "SD1041-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1047-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1030-D-WRG",
+    "qty": 3
+  },
+  {
+    "code": "SD1038-D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1033-D-WRG",
+    "qty": 3
+  },
+  {
+    "code": "SD1033-D-BCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1031-WCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1031-WGP",
+    "qty": 2
+  },
+  {
+    "code": "SD1031-WRG",
+    "qty": 5
+  },
+  {
+    "code": "SD1233-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1035-BC",
+    "qty": 2
+  },
+  {
+    "code": "SD1021-CP",
+    "qty": 4
+  },
+  {
+    "code": "SD1120-D-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD1120-D-BC",
+    "qty": 2
+  },
+  {
+    "code": "SD1120-D-GP",
+    "qty": 4
+  },
+  {
+    "code": "SD1120-D-RG",
+    "qty": 3
+  },
+  {
+    "code": "SD1125-D-RG",
+    "qty": 2
+  },
+  {
+    "code": "SD1123-D-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1123-D-GP",
+    "qty": 4
+  },
+  {
+    "code": "SD1123-D-SRG",
+    "qty": 3
+  },
+  {
+    "code": "SD1119-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1121-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1121-RG",
+    "qty": 2
+  },
+  {
+    "code": "SD1121-BCP",
+    "qty": 1
+  },
+  {
+    "code": "SD1124-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD1124-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD1126-CP",
+    "qty": 3
+  },
+  {
+    "code": "SD1135-C-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1140-D-CP",
+    "qty": 3
+  },
+  {
+    "code": "SD1146-CP",
+    "qty": 6
+  },
+  {
+    "code": "SD1150-D-CP",
+    "qty": 49
+  },
+  {
+    "code": "SD2073-2-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2075-2-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2030-1D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2031-1D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2032-1D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2033-2-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2037-1-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2011-1D-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD2012-1D-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD2013-1-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD3112-1-CP",
+    "qty": 4
+  },
+  {
+    "code": "SD3093-CP",
+    "qty": 4
+  },
+  {
+    "code": "SD3268-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD3402-GP",
+    "qty": 2
+  },
+  {
+    "code": "SD3403-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD3405-RG",
+    "qty": 5
+  },
+  {
+    "code": "SD5034-RG",
+    "qty": 3
+  },
+  {
+    "code": "SD5032-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD3240-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD3240-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD3240-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3293-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD3293-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3210-BC",
+    "qty": 2
+  },
+  {
+    "code": "SD3210-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3209-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3209-RG",
+    "qty": 1
+  },
+  {
+    "code": "SD3216-CP",
+    "qty": 4
+  },
+  {
+    "code": "SD3216-GP",
+    "qty": 14
+  },
+  {
+    "code": "SD3322-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3320-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4101-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD4102-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4104-CP",
+    "qty": 11
+  },
+  {
+    "code": "SD4100-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4109-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4110-RG",
+    "qty": 7
+  },
+  {
+    "code": "SD4106-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD4045-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD5016-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD5016-GP",
+    "qty": 4
+  },
+  {
+    "code": "SD5016-RG",
+    "qty": 5
+  },
+  {
+    "code": "SD5026-GP",
+    "qty": 2
+  },
+  {
+    "code": "SD4035-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4201-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD4201-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD4201-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD4200-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD4200-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3217-GP",
+    "qty": 10
+  },
+  {
+    "code": "SD3207-RG",
+    "qty": 8
+  },
+  {
+    "code": "SD3206-GP",
+    "qty": 9
+  },
+  {
+    "code": "SD3205-GP",
+    "qty": 5
+  },
+  {
+    "code": "SD3205-RG",
+    "qty": 3
+  },
+  {
+    "code": "SD3224-GP",
+    "qty": 1
+  },
+  {
+    "code": "SD3280-CP",
+    "qty": 2
+  },
+  {
+    "code": "SD3277-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD3284-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD3222-BC",
+    "qty": 1
+  },
+  {
+    "code": "SD3222-RG",
+    "qty": 2
+  },
+  {
+    "code": "SD3278-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD3279-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1017-CP",
+    "qty": 1
+  },
+  {
+    "code": "SD1018-CP",
+    "qty": 2
+  }
+]
