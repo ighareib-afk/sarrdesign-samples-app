@@ -94,6 +94,7 @@ class User(Base):
     role = Column(Enum(Role), nullable=False)
     area = Column(String(120))          # free text region, mainly for sales managers
     phone = Column(String(40))
+    language = Column(String(5), default="en")   # "en" or "ar" - each user's own dashboard language
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=now)
 

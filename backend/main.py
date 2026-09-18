@@ -7,11 +7,13 @@ from starlette.middleware.cors import CORSMiddleware
 
 from database import Base, engine, SessionLocal
 import models  # noqa: F401 - ensure models are registered before create_all
+import migrate
 import seed
 
 from routers import auth_router, users_router, catalog_router, requests_router, factory_router, warehouse_router
 
 Base.metadata.create_all(bind=engine)
+migrate.run_migrations(engine)
 
 app = FastAPI(title="Sarrdesign Sample Display Control")
 

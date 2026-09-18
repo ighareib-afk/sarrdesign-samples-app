@@ -4,6 +4,7 @@ def user_out(u):
     return {
         "id": u.id, "name": u.name, "email": u.email, "role": u.role.value,
         "area": u.area, "phone": u.phone, "active": u.active,
+        "language": u.language or "en",
     }
 
 

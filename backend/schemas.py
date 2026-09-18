@@ -24,6 +24,11 @@ class UserUpdateIn(BaseModel):
     phone: Optional[str] = None
     active: Optional[bool] = None
     password: Optional[str] = None
+    language: Optional[str] = None
+
+
+class LanguageIn(BaseModel):
+    language: str  # "en" or "ar"
 
 
 # ---------- Products ----------
