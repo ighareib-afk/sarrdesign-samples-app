@@ -54,6 +54,7 @@ def item_out(i):
         "qty_assigned_showroom": i.qty_assigned_showroom,
         "qty_returned_warehouse": i.qty_returned_warehouse,
         "qty_in_warehouse": i.qty_in_warehouse,
+        "open_flags": sum(1 for f in i.issue_flags if not f.resolved) if i.issue_flags is not None else 0,
     }
 
 
@@ -142,6 +143,27 @@ def return_out(r):
         "recorded_by": r.recorded_by,
         "date_returned": r.date_returned.isoformat() if r.date_returned else None,
         "restocked": r.restocked,
+    }
+
+
+def flag_out(f):
+    item = f.item
+    req = item.request if item else None
+    return {
+        "id": f.id, "item_id": f.item_id, "factory_shipment_id": f.factory_shipment_id,
+        "reason": f.reason,
+        "raised_by": f.raised_by, "raised_by_name": f.raised_by_user.name if f.raised_by_user else None,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+        "resolved": f.resolved,
+        "resolved_by": f.resolved_by, "resolved_by_name": f.resolved_by_user.name if f.resolved_by_user else None,
+        "resolved_at": f.resolved_at.isoformat() if f.resolved_at else None,
+        "resolution_notes": f.resolution_notes,
+        "product_code": item.product.code if item and item.product else None,
+        "product_color": item.product.color if item and item.product else None,
+        "request_id": req.id if req else None,
+        "request_number": req.request_number if req else None,
+        "distributor_name": req.distributor.name if req and req.distributor else None,
+        "showroom_name": req.showroom.name if req and req.showroom else None,
     }
 
 

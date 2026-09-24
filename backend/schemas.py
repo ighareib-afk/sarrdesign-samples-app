@@ -108,6 +108,15 @@ class RequestDecisionIn(BaseModel):
     notes: Optional[str] = None
 
 
+class ItemReRequestIn(BaseModel):
+    """Sent when re-requesting a director-rejected line - only the fields being
+    changed need to be included, everything else stays as it was."""
+    qty_requested: Optional[int] = None
+    is_dummy: Optional[bool] = None
+    distributor_order_qty: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class FactoryShipmentIn(BaseModel):
     item_id: int
     qty_sent: int
@@ -141,3 +150,14 @@ class ReturnEventIn(BaseModel):
     reason: str
     notes: Optional[str] = None
     restocked: Optional[bool] = True
+
+
+# ---------- Shipment issue flags (warehouse-raised mismatch reports) ----------
+class ShipmentFlagIn(BaseModel):
+    item_id: int
+    factory_shipment_id: Optional[int] = None
+    reason: str
+
+
+class FlagResolveIn(BaseModel):
+    resolution_notes: Optional[str] = None

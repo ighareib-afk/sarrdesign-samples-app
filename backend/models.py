@@ -213,6 +213,7 @@ class SampleRequestItem(Base):
     receipts = relationship("WarehouseReceipt", back_populates="item", cascade="all, delete-orphan")
     dismissal_approvals = relationship("DismissalApproval", back_populates="item", cascade="all, delete-orphan")
     assignments = relationship("ShowroomAssignment", back_populates="item", cascade="all, delete-orphan")
+    issue_flags = relationship("ShipmentIssueFlag", back_populates="item", cascade="all, delete-orphan")
 
     @property
     def qty_in_warehouse(self):
@@ -348,6 +349,35 @@ class ReturnEvent(Base):
     restocked = Column(Boolean, default=True)   # False if it went straight to scrap / repair
 
     assignment = relationship("ShowroomAssignment", back_populates="returns")
+
+
+# ---------------------------------------------------------------------------
+# Warehouse-raised mismatch flags (receiving vs. what the factory shipped)
+# ---------------------------------------------------------------------------
+
+class ShipmentIssueFlag(Base):
+    """
+    An alert the warehouse raises when a factory shipment doesn't match what was
+    expected (wrong quantity, wrong SKU/color, damage, etc). Purely informational -
+    it never blocks receiving or anything downstream. Visible to the admin (and
+    factory/director) on the Shipment Issues screen until the admin resolves it.
+    """
+    __tablename__ = "shipment_issue_flags"
+
+    id = Column(Integer, primary_key=True)
+    item_id = Column(Integer, ForeignKey("sample_request_items.id"), nullable=False)
+    factory_shipment_id = Column(Integer, ForeignKey("factory_shipments.id"), nullable=True)
+    reason = Column(Text, nullable=False)
+    raised_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=now)
+    resolved = Column(Boolean, default=False)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolution_notes = Column(Text)
+
+    item = relationship("SampleRequestItem", back_populates="issue_flags")
+    raised_by_user = relationship("User", foreign_keys=[raised_by])
+    resolved_by_user = relationship("User", foreign_keys=[resolved_by])
 
 
 # ---------------------------------------------------------------------------
