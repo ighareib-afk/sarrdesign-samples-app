@@ -152,6 +152,142 @@ def review_request(request_id: int, payload: schemas.RequestDecisionIn, db: Sess
     return serializers.request_out(r)
 
 
+@router.post("/items/{item_id}/re-request")
+def re_request_item(item_id: int, payload: schemas.ItemReRequestIn, db: Session = Depends(get_db),
+                     user: models.User = Depends(get_current_user)):
+    """
+    Bring a director-rejected line back for review without redoing the whole data
+    entry: the sales manager who owns the request (or the admin) can tweak the
+    quantity / dummy flag / order qty and resend it to Mostafa - no need to delete
+    and recreate the request.
+    """
+    item = db.query(models.SampleRequestItem).filter(models.SampleRequestItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    r = item.request
+
+    is_owner = user.role == models.Role.SALES_MANAGER and r.sales_manager_id == user.id
+    if user.role != models.Role.ADMIN and not is_owner:
+        raise HTTPException(status_code=403, detail="Only the request's sales manager or an admin can re-request this line")
+    if item.status != models.ItemStatus.REJECTED:
+        raise HTTPException(status_code=400, detail=f"Item is in status {item.status.value} - only a rejected line can be re-requested")
+
+    if payload.qty_requested is not None:
+        if payload.qty_requested <= 0:
+            raise HTTPException(status_code=400, detail="qty_requested must be positive")
+        item.qty_requested = payload.qty_requested
+    if payload.is_dummy is not None:
+        item.is_dummy = payload.is_dummy
+    if payload.distributor_order_qty is not None:
+        item.distributor_order_qty = payload.distributor_order_qty
+        min_qty = (r.showroom.min_order_qty or 5) if r.showroom else 5
+        item.min_order_met = payload.distributor_order_qty >= min_qty
+
+    # back for a fresh look - clear the previous decision so it doesn't read as
+    # already-reviewed, and the director's checks (SKU match / notes) start clean
+    item.status = models.ItemStatus.PENDING_REVIEW
+    item.qty_approved = 0
+    item.sku_matches_stock = None
+    item.director_notes = None
+
+    # only recompute the request's own status if it hasn't progressed past review yet
+    # (once other lines have gone to the factory, this stays wherever they put it)
+    if r.status in (models.RequestStatus.SUBMITTED, models.RequestStatus.DIRECTOR_APPROVED,
+                    models.RequestStatus.DIRECTOR_REJECTED):
+        statuses = {i.status for i in r.items}
+        if statuses == {models.ItemStatus.REJECTED}:
+            r.status = models.RequestStatus.DIRECTOR_REJECTED
+        elif models.ItemStatus.PENDING_REVIEW in statuses:
+            r.status = models.RequestStatus.SUBMITTED
+        else:
+            r.status = models.RequestStatus.DIRECTOR_APPROVED
+
+    db.add(models.ApprovalAction(
+        request_id=r.id, item_id=item.id, actor_id=user.id, action="re_request", notes=payload.notes,
+    ))
+    log_action(db, user, "sample_request_item", item.id, "re_request", payload.notes or "")
+    db.commit()
+    db.refresh(item)
+    return serializers.item_out(item)
+
+
+def _item_is_deletable(item: models.SampleRequestItem) -> bool:
+    """Safe to delete only before anything has actually left the factory for it -
+    past that point, deleting it would leave shipment/stock numbers inconsistent."""
+    return item.qty_shipped_from_factory == 0 and len(item.shipments) == 0
+
+
+@router.delete("/{request_id}/items/{item_id}")
+def delete_item(request_id: int, item_id: int, reason: Optional[str] = None, db: Session = Depends(get_db),
+                 user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    """Admin-only: remove a single wrongly-entered line. Blocked once the factory
+    has shipped anything for it. If it's the request's last line, the whole
+    (now-empty) request is removed too."""
+    r = db.query(models.SampleRequest).filter(models.SampleRequest.id == request_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    item = next((i for i in r.items if i.id == item_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not on this request")
+    if not _item_is_deletable(item):
+        raise HTTPException(status_code=400, detail="This line has already been shipped from the factory and can no longer be deleted")
+
+    code = item.product.code if item.product else str(item.product_id)
+    detail = f"{r.request_number}: deleted line {code} (qty {item.qty_requested})"
+    if reason:
+        detail += f" - reason: {reason}"
+    log_action(db, user, "sample_request_item", item.id, "delete", detail)
+
+    db.query(models.ApprovalAction).filter(models.ApprovalAction.item_id == item.id).delete()
+    db.delete(item)
+    db.flush()
+
+    remaining = [i for i in r.items if i.id != item_id]
+    if not remaining:
+        log_action(db, user, "sample_request", r.id, "delete", f"{r.request_number}: deleted (last line removed)")
+        db.delete(r)
+        db.commit()
+        return {"deleted": True, "request_deleted": True}
+
+    if r.status in (models.RequestStatus.SUBMITTED, models.RequestStatus.DIRECTOR_APPROVED,
+                    models.RequestStatus.DIRECTOR_REJECTED):
+        statuses = {i.status for i in remaining}
+        if statuses == {models.ItemStatus.REJECTED}:
+            r.status = models.RequestStatus.DIRECTOR_REJECTED
+        elif models.ItemStatus.PENDING_REVIEW in statuses:
+            r.status = models.RequestStatus.SUBMITTED
+        else:
+            r.status = models.RequestStatus.DIRECTOR_APPROVED
+    db.commit()
+    return {"deleted": True, "request_deleted": False}
+
+
+@router.delete("/{request_id}")
+def delete_request(request_id: int, reason: Optional[str] = None, db: Session = Depends(get_db),
+                    user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    """Admin-only: remove an entire wrongly-entered request. Blocked if any of its
+    lines have already been shipped from the factory - delete just the unshipped
+    lines individually in that case."""
+    r = db.query(models.SampleRequest).filter(models.SampleRequest.id == request_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    undeletable = [i for i in r.items if not _item_is_deletable(i)]
+    if undeletable:
+        codes = ", ".join(i.product.code if i.product else str(i.id) for i in undeletable)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete: already shipped from the factory for: {codes}. Delete the remaining unshipped lines individually instead.",
+        )
+
+    detail = f"{r.request_number} deleted ({len(r.items)} line(s))"
+    if reason:
+        detail += f" - reason: {reason}"
+    log_action(db, user, "sample_request", r.id, "delete", detail)
+    db.delete(r)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.post("/{request_id}/send-to-factory")
 def send_to_factory(request_id: int, db: Session = Depends(get_db),
                      user: models.User = Depends(require_roles(models.Role.COMMERCIAL_DIRECTOR))):

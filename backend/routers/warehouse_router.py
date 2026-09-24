@@ -105,6 +105,60 @@ def log_receipt(payload: schemas.WarehouseReceiptIn, db: Session = Depends(get_d
     return serializers.item_out(item)
 
 
+@router.post("/shipment-flags")
+def raise_shipment_flag(payload: schemas.ShipmentFlagIn, db: Session = Depends(get_db),
+                         user: models.User = Depends(require_roles(models.Role.WAREHOUSE))):
+    """
+    Warehouse raises a flag when what physically arrived doesn't match what the
+    factory said it sent (wrong quantity, wrong SKU/color, damage, etc). This never
+    blocks receiving or anything downstream - it's purely a visible alert for the
+    admin (and factory/director) to look into.
+    """
+    item = db.query(models.SampleRequestItem).filter(models.SampleRequestItem.id == payload.item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Describe the issue")
+
+    flag = models.ShipmentIssueFlag(
+        item_id=item.id, factory_shipment_id=payload.factory_shipment_id,
+        reason=payload.reason.strip(), raised_by=user.id,
+    )
+    db.add(flag)
+    log_action(db, user, "sample_request_item", item.id, "shipment_flag_raised", payload.reason.strip())
+    db.commit()
+    db.refresh(flag)
+    return serializers.flag_out(flag)
+
+
+@router.get("/shipment-flags")
+def list_shipment_flags(resolved: Optional[bool] = None, db: Session = Depends(get_db),
+                         user: models.User = Depends(get_current_user)):
+    query = db.query(models.ShipmentIssueFlag)
+    if resolved is not None:
+        query = query.filter(models.ShipmentIssueFlag.resolved == resolved)
+    flags = query.order_by(models.ShipmentIssueFlag.id.desc()).all()
+    return [serializers.flag_out(f) for f in flags]
+
+
+@router.post("/shipment-flags/{flag_id}/resolve")
+def resolve_shipment_flag(flag_id: int, payload: schemas.FlagResolveIn, db: Session = Depends(get_db),
+                           user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    flag = db.query(models.ShipmentIssueFlag).filter(models.ShipmentIssueFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(status_code=404, detail="Flag not found")
+    if flag.resolved:
+        raise HTTPException(status_code=400, detail="Already resolved")
+    flag.resolved = True
+    flag.resolved_by = user.id
+    flag.resolved_at = models.now()
+    flag.resolution_notes = payload.resolution_notes
+    log_action(db, user, "sample_request_item", flag.item_id, "shipment_flag_resolved", payload.resolution_notes or "")
+    db.commit()
+    db.refresh(flag)
+    return serializers.flag_out(flag)
+
+
 @router.get("/stock")
 def stock(q: Optional[str] = None, db: Session = Depends(get_db),
           user: models.User = Depends(get_current_user)):
