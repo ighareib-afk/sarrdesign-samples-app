@@ -101,6 +101,7 @@ const NAV = [
   { href: "#/factory", key: "nav_factory", roles: ["factory", "commercial_director", "admin"] },
   { href: "#/warehouse/incoming", key: "nav_incoming", roles: ["warehouse", "commercial_director", "factory", "admin"] },
   { href: "#/warehouse/stock", key: "nav_stock", roles: ["warehouse", "admin", "commercial_director", "assembly"] },
+  { href: "#/issues", key: "nav_issues", roles: ["admin", "warehouse", "factory", "commercial_director"] },
   { href: "#/dismissals", key: "nav_dismissals", roles: ["warehouse", "assembly", "admin"] },
   { href: "#/returns", key: "nav_returns", roles: ["warehouse", "assembly", "admin"] },
   { href: "#/history", key: "nav_history", roles: "*" },
@@ -252,7 +253,9 @@ async function viewDashboard() {
       const pendingDismissals = await api("GET", "/warehouse/dismissal-requests?status=pending");
       const incoming = await api("GET", "/warehouse/incoming");
       const stock = await api("GET", "/warehouse/stock");
-      cards = [["dash_dismissals_awaiting_you", pendingDismissals.length], ["dash_in_transit", incoming.length], ["dash_skus_short", stock.length]];
+      const openIssues = await api("GET", "/warehouse/shipment-flags?resolved=false");
+      cards = [["dash_dismissals_awaiting_you", pendingDismissals.length], ["dash_in_transit", incoming.length],
+        ["dash_skus_short", stock.length], ["dash_open_issues", openIssues.length]];
     }
   } catch (e) { /* ignore, toast shown */ }
 
@@ -481,11 +484,16 @@ async function viewRequestDetail(id) {
   const r = await api("GET", `/requests/${id}`);
   const role = CURRENT_USER.role;
 
-  const canReview = role === "commercial_director" && (r.status === "submitted" || r.status === "director_approved");
+  // any pending line still needs the director's eyes, whatever stage the request as a
+  // whole has reached (e.g. after a re-request on one line while others already shipped)
+  const canReview = role === "commercial_director" && r.items.some((it) => it.status === "pending_review");
   const canSendToFactory = (role === "commercial_director" || role === "admin") && r.status === "director_approved";
   const canExport = (role === "factory" || role === "commercial_director" || role === "admin");
   const canShip = role === "factory";
   const canReceive = role === "warehouse";
+  const canReRequest = role === "admin" || (role === "sales_manager" && r.sales_manager_id === CURRENT_USER.id);
+  const canDeleteItems = role === "admin";
+  const requestDeletable = role === "admin" && r.items.length > 0 && r.items.every((it) => it.qty_shipped_from_factory === 0);
 
   main.innerHTML = `
     <div class="card">
@@ -497,6 +505,7 @@ async function viewRequestDetail(id) {
         <div>
           ${canExport ? `<a href="/api/requests/${r.id}/export.xlsx"><button class="secondary" type="button">${esc(t("reqdet_export"))}</button></a>` : ""}
           ${canSendToFactory ? `<button id="sendFactoryBtn" class="success">${esc(t("reqdet_send_factory"))}</button>` : ""}
+          ${requestDeletable ? `<button id="deleteReqBtn" class="danger">${esc(t("reqdet_delete_request"))}</button>` : ""}
         </div>
       </div>
       <div class="grid cols-3 mt">
@@ -535,7 +544,7 @@ async function viewRequestDetail(id) {
     </div>
   `;
 
-  renderItems(r, { canReview, canShip, canReceive });
+  renderItems(r, { canReview, canShip, canReceive, canReRequest, canDeleteItems });
 
   const attachWrap = qs("#attachWrap");
   attachWrap.innerHTML = r.attachments.length
@@ -562,16 +571,61 @@ async function viewRequestDetail(id) {
       viewRequestDetail(id);
     } catch (err) { /* toast shown */ }
   });
+
+  const deleteReqBtn = qs("#deleteReqBtn");
+  if (deleteReqBtn) deleteReqBtn.addEventListener("click", async () => {
+    if (!confirm(t("reqdet_delete_request_confirm", { n: r.request_number }))) return;
+    const reason = prompt(t("delete_reason_prompt")) || "";
+    try {
+      await api("DELETE", `/requests/${id}${reason ? "?reason=" + encodeURIComponent(reason) : ""}`);
+      toast(t("msg_request_deleted"), "success");
+      location.hash = "#/requests";
+    } catch (err) { /* toast shown */ }
+  });
+}
+
+function openReRequestModal(r, item) {
+  const backdrop = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>${esc(t("modal_rerequest_title"))}</h3>
+    <p class="small muted">${esc(t("rerequest_help"))}</p>
+    <p><b>${esc(item.product_code)}</b> - ${esc(item.product_color)} / ${esc(item.product_family)}</p>
+    ${item.director_notes ? `<p class="small muted">${esc(t("notesLabel"))}: ${esc(item.director_notes)}</p>` : ""}
+    <div class="grid cols-2">
+      <div><label>${esc(t("rerequest_qty"))}</label><input id="rr_qty" type="number" min="1" value="${item.qty_requested}"></div>
+      <div><label>${esc(t("rerequest_order_qty"))}</label><input id="rr_order_qty" type="number" min="0" value="${item.distributor_order_qty ?? ""}"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+      <input type="checkbox" id="rr_dummy" ${item.is_dummy ? "checked" : ""} style="width:auto;"> ${esc(t("rerequest_dummy"))}
+    </label>
+    <label>${esc(t("rerequest_notes"))}</label><input id="rr_notes" placeholder="${esc(t("optional"))}">
+    <div class="right mt"><button type="button" class="secondary" id="cancelBtn">${esc(t("cancel"))}</button><button type="button" id="saveBtn">${esc(t("rerequest_submit"))}</button></div>
+  </div></div>`);
+  document.body.appendChild(backdrop);
+  qs("#cancelBtn", backdrop).addEventListener("click", () => backdrop.remove());
+  qs("#saveBtn", backdrop).addEventListener("click", async () => {
+    const payload = {
+      qty_requested: Number(qs("#rr_qty", backdrop).value) || item.qty_requested,
+      is_dummy: qs("#rr_dummy", backdrop).checked,
+      distributor_order_qty: qs("#rr_order_qty", backdrop).value === "" ? null : Number(qs("#rr_order_qty", backdrop).value),
+      notes: qs("#rr_notes", backdrop).value || null,
+    };
+    try {
+      await api("POST", `/requests/items/${item.id}/re-request`, payload);
+      toast(t("msg_rerequested"), "success");
+      backdrop.remove();
+      viewRequestDetail(r.id);
+    } catch (e) { /* toast shown */ }
+  });
 }
 
 function renderItems(r, perms) {
   const wrap = qs("#itemsWrap");
   wrap.innerHTML = `<div class="table-wrap"><table><thead><tr>
     <th>${esc(t("col_code"))}</th><th>${esc(t("col_color_family"))}</th><th>${esc(t("col_requested"))}</th><th>${esc(t("col_approved"))}</th><th>${esc(t("col_type"))}</th>
-    <th>${esc(t("col_moq_check"))}</th><th>${esc(t("col_status"))}</th><th>${esc(t("col_shipped"))}</th><th>${esc(t("col_received"))}</th><th>${esc(t("col_assigned"))}</th><th></th>
+    <th>${esc(t("col_moq_check"))}</th><th>${esc(t("col_status"))}</th><th>${esc(t("col_shipped"))}</th><th>${esc(t("col_received"))}</th><th>${esc(t("col_assigned"))}</th><th></th><th></th>
   </tr></thead><tbody>
     ${r.items.map((it) => `<tr>
-      <td>${esc(it.product_code)}</td>
+      <td>${esc(it.product_code)}${flagBadge(it.open_flags)}</td>
       <td>${esc(it.product_color)} / ${esc(it.product_family)}</td>
       <td>${it.qty_requested}</td>
       <td>${it.qty_approved}</td>
@@ -582,8 +636,27 @@ function renderItems(r, perms) {
       <td>${it.qty_received_warehouse}</td>
       <td>${it.qty_assigned_showroom}</td>
       <td>${it.director_notes ? `<span class="small muted" title="${esc(it.director_notes)}">note</span>` : ""}</td>
+      <td>
+        ${perms.canReRequest && it.status === "rejected" ? `<button type="button" class="ghost rerequest-btn" data-id="${it.id}">${esc(t("reqdet_rerequest_btn"))}</button>` : ""}
+        ${perms.canDeleteItems && it.qty_shipped_from_factory === 0 ? `<button type="button" class="ghost delete-item-btn" data-id="${it.id}">${esc(t("reqdet_delete_item_btn"))}</button>` : ""}
+      </td>
     </tr>`).join("")}
   </tbody></table></div>`;
+
+  qsa(".rerequest-btn", wrap).forEach((btn) => btn.addEventListener("click", () => {
+    const item = r.items.find((it) => it.id === Number(btn.dataset.id));
+    openReRequestModal(r, item);
+  }));
+  qsa(".delete-item-btn", wrap).forEach((btn) => btn.addEventListener("click", async () => {
+    if (!confirm(t("reqdet_delete_item_confirm"))) return;
+    const reason = prompt(t("delete_reason_prompt")) || "";
+    try {
+      const res = await api("DELETE", `/requests/${r.id}/items/${btn.dataset.id}${reason ? "?reason=" + encodeURIComponent(reason) : ""}`);
+      toast(t("msg_item_deleted"), "success");
+      if (res && res.request_deleted) location.hash = "#/requests";
+      else viewRequestDetail(r.id);
+    } catch (e) { /* toast shown */ }
+  }));
 
   if (perms.canReview) {
     const pending = r.items.filter((it) => it.status === "pending_review");
@@ -674,6 +747,7 @@ function renderItems(r, perms) {
           <div class="row mt">
             <input type="number" min="1" max="${remaining}" value="${remaining}" class="rec-qty">
             <button type="button" class="rec-btn" data-item="${it.id}">${esc(t("recv_btn"))}</button>
+            <button type="button" class="ghost flag-issue-btn" data-item="${it.id}">${esc(t("recv_flag_btn"))}</button>
           </div>
         </div>`;
       }).join("");
@@ -685,6 +759,9 @@ function renderItems(r, perms) {
           toast(t("recv_logged"), "success");
           viewRequestDetail(r.id);
         } catch (e) { /* toast shown */ }
+      }));
+      qsa(".flag-issue-btn", recBox).forEach((btn) => btn.addEventListener("click", () => {
+        raiseShipmentFlag(Number(btn.dataset.item), () => viewRequestDetail(r.id));
       }));
     }
   }
@@ -729,22 +806,25 @@ async function viewWarehouseIncoming() {
   const items = await api("GET", "/warehouse/incoming");
   const wrap = qs("#wrap");
   if (items.length === 0) { wrap.innerHTML = `<div class="empty-state">${esc(t("incoming_empty"))}</div>`; return; }
+  const canFlag = CURRENT_USER.role === "warehouse" || CURRENT_USER.role === "admin";
   wrap.innerHTML = `<div class="table-wrap"><table><thead><tr>
     <th>${esc(t("col_request"))}</th><th>${esc(t("col_dist_showroom"))}</th><th>${esc(t("col_code"))}</th><th>${esc(t("col_approved"))}</th><th>${esc(t("col_shipped"))}</th><th>${esc(t("col_received"))}</th>
-    <th>${esc(t("col_outstanding"))}</th><th>${esc(t("col_pending_receive"))}</th><th>${esc(t("col_status"))}</th>
+    <th>${esc(t("col_outstanding"))}</th><th>${esc(t("col_pending_receive"))}</th><th>${esc(t("col_status"))}</th><th></th>
   </tr></thead><tbody>
     ${items.map((it) => `<tr>
       <td><a href="#/requests/${it.request_id}">${esc(it.request_number)}</a></td>
       <td dir-auto>${esc(it.distributor_name)} / ${esc(it.showroom_name)}</td>
-      <td>${esc(it.product_code)}</td>
+      <td>${esc(it.product_code)}${flagBadge(it.open_flags)}</td>
       <td>${it.qty_approved}</td>
       <td>${it.qty_shipped_from_factory}</td>
       <td>${it.qty_received_warehouse}</td>
       <td>${it.outstanding_from_factory > 0 ? `<b style="color:var(--red)">${it.outstanding_from_factory}</b>` : 0}</td>
       <td>${it.pending_receive}</td>
       <td>${badge(it.status)}</td>
+      <td>${canFlag ? `<button type="button" class="ghost flag-btn" data-id="${it.id}">${esc(t("recv_flag_btn"))}</button>` : ""}</td>
     </tr>`).join("")}
   </tbody></table></div>`;
+  qsa(".flag-btn", wrap).forEach((btn) => btn.addEventListener("click", () => raiseShipmentFlag(Number(btn.dataset.id), () => viewWarehouseIncoming())));
 }
 
 async function viewWarehouseStock() {
@@ -761,7 +841,7 @@ async function viewWarehouseStock() {
       <th>${esc(t("col_code"))}</th><th>${esc(t("col_color_family"))}</th><th>${esc(t("col_held_for"))}</th><th>${esc(t("col_request"))}</th><th>${esc(t("col_qty_in_warehouse"))}</th><th>${esc(t("col_type"))}</th>
     </tr></thead><tbody>
       ${items.map((it) => `<tr>
-        <td>${esc(it.product_code)}</td>
+        <td>${esc(it.product_code)}${flagBadge(it.open_flags)}</td>
         <td>${esc(it.product_color)} / ${esc(it.product_family)}</td>
         <td dir-auto>${esc(it.distributor_name)} / ${esc(it.showroom_name)}</td>
         <td><a href="#/requests/${it.request_id}">${esc(it.request_number)}</a></td>
@@ -771,6 +851,81 @@ async function viewWarehouseStock() {
     </tbody></table></div>`;
   }
   qs("#q").addEventListener("input", () => { clearTimeout(window.__stockTimer); window.__stockTimer = setTimeout(load, 250); });
+  load();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Shipment issues (warehouse-raised flags)                               */
+/* ---------------------------------------------------------------------- */
+
+async function raiseShipmentFlag(itemId, onDone) {
+  const reason = prompt(t("flag_prompt"));
+  if (reason === null) return;
+  if (!reason.trim()) { toast(t("msg_flag_required"), "error"); return; }
+  try {
+    await api("POST", "/warehouse/shipment-flags", { item_id: itemId, reason: reason.trim() });
+    toast(t("msg_flag_raised"), "success");
+    if (onDone) onDone();
+  } catch (e) { /* toast shown */ }
+}
+
+function flagBadge(openFlags) {
+  if (!openFlags) return "";
+  return ` <span class="badge status-director_rejected" title="${esc(t("flag_badge"))}">🚩 ${openFlags}</span>`;
+}
+
+async function viewShipmentIssues() {
+  const main = renderShell("#/issues");
+  const canResolve = CURRENT_USER.role === "admin";
+  main.innerHTML = `
+    <div class="card">
+      <div class="flex-between">
+        <h2 style="margin:0;">${esc(t("issues_title"))}</h2>
+        <div class="row" style="max-width:260px;">
+          <select id="statusFilter">
+            <option value="false">${esc(t("issues_filter_open"))}</option>
+            <option value="true">${esc(t("issues_filter_resolved"))}</option>
+            <option value="">${esc(t("filter_all"))}</option>
+          </select>
+        </div>
+      </div>
+      <p class="small muted">${esc(t("issues_help"))}</p>
+      <div id="wrap" class="mt"><p class="muted">${esc(t("loading"))}</p></div>
+    </div>
+  `;
+
+  async function load() {
+    const val = qs("#statusFilter").value;
+    const flags = await api("GET", `/warehouse/shipment-flags${val ? "?resolved=" + val : ""}`);
+    const wrap = qs("#wrap");
+    if (flags.length === 0) { wrap.innerHTML = `<div class="empty-state">${esc(t("issues_none"))}</div>`; return; }
+    wrap.innerHTML = `<div class="table-wrap"><table><thead><tr>
+      <th>${esc(t("col_raised_on"))}</th><th>${esc(t("col_request"))}</th><th>${esc(t("col_dist_showroom"))}</th>
+      <th>${esc(t("col_code"))}</th><th>${esc(t("col_reason"))}</th><th>${esc(t("col_raised_by"))}</th><th>${esc(t("col_status"))}</th><th></th>
+    </tr></thead><tbody>
+      ${flags.map((f) => `<tr>
+        <td>${fmtDate(f.created_at)}</td>
+        <td><a href="#/requests/${f.request_id}">${esc(f.request_number || "-")}</a></td>
+        <td dir-auto>${esc(f.distributor_name)} / ${esc(f.showroom_name)}</td>
+        <td>${esc(f.product_code)}</td>
+        <td>${esc(f.reason)}${f.resolved && f.resolution_notes ? `<br><span class="small muted">${esc(f.resolution_notes)}</span>` : ""}</td>
+        <td>${esc(f.raised_by_name || "-")}</td>
+        <td><span class="badge status-${f.resolved ? "completed" : "director_rejected"}">${esc(f.resolved ? t("issues_status_resolved") : t("issues_status_open"))}</span></td>
+        <td>${canResolve && !f.resolved ? `<button type="button" class="secondary resolve-btn" data-id="${f.id}">${esc(t("issues_resolve_btn"))}</button>` : ""}</td>
+      </tr>`).join("")}
+    </tbody></table></div>`;
+
+    qsa(".resolve-btn", wrap).forEach((btn) => btn.addEventListener("click", async () => {
+      const notes = prompt(t("issues_resolve_prompt")) || null;
+      try {
+        await api("POST", `/warehouse/shipment-flags/${btn.dataset.id}/resolve`, { resolution_notes: notes });
+        toast(t("msg_flag_resolved"), "success");
+        load();
+      } catch (e) { /* toast shown */ }
+    }));
+  }
+
+  qs("#statusFilter").addEventListener("change", load);
   load();
 }
 
@@ -1364,6 +1519,7 @@ async function route() {
     if (parts[0] === "factory") return viewFactoryQueue();
     if (parts[0] === "warehouse" && parts[1] === "incoming") return viewWarehouseIncoming();
     if (parts[0] === "warehouse" && parts[1] === "stock") return viewWarehouseStock();
+    if (parts[0] === "issues") return viewShipmentIssues();
     if (parts[0] === "dismissals") return viewDismissals();
     if (parts[0] === "returns") return viewReturns();
     if (parts[0] === "history") return viewHistory();

@@ -12,7 +12,7 @@ const I18N = {
     nav_dashboard: "Dashboard", nav_new_request: "New Request", nav_requests: "Sample Requests",
     nav_factory: "Factory Queue", nav_incoming: "Incoming", nav_stock: "Warehouse Stock",
     nav_dismissals: "Dismissal Approvals", nav_returns: "Record Return", nav_history: "History Archive",
-    nav_products: "Products", nav_distributors: "Distributors", nav_users: "Users",
+    nav_products: "Products", nav_distributors: "Distributors", nav_users: "Users", nav_issues: "Shipment Issues",
 
     role_admin: "Admin", role_sales_manager: "Sales Area Manager", role_commercial_director: "Commercial Director",
     role_factory: "Factory", role_warehouse: "Warehouse", role_assembly: "Assembly Team",
@@ -27,6 +27,7 @@ const I18N = {
     dash_skus_in_warehouse: "SKUs currently in warehouse", dash_pending_dismissals: "Pending dismissal approvals",
     dash_ready_to_display: "Approved, ready to display", dash_dismissals_awaiting_you: "Dismissal approvals awaiting you",
     dash_in_transit: "Items in transit / delayed", dash_skus_short: "SKUs in warehouse",
+    dash_open_issues: "Open shipment issues",
     dash_workflow_title: "Workflow at a glance",
     dash_workflow_text: "Sales area manager creates a sample request against a showroom → commercial director reviews each SKU against the distributor's order → approved lines go to the factory → factory ships (often in partial batches) → warehouse confirms receipt → a dismissal must be approved before any sample leaves the warehouse → assembly team displays it at the showroom → returns/replacements flow back through the warehouse. Every step is dated and attributed.",
 
@@ -74,6 +75,21 @@ const I18N = {
     ship_logged: "Shipment logged",
     recv_title: "Log warehouse receipt", recv_summary: "shipped {s}, received so far {r}, in transit {t}",
     recv_btn: "Log receipt", recv_logged: "Receipt logged", sent_to_factory_msg: "Sent to factory",
+    recv_flag_btn: "Flag issue", flag_prompt: "Describe the mismatch (wrong quantity, wrong SKU/color, damage, etc.):",
+    msg_flag_required: "Describe the issue before flagging it", msg_flag_raised: "Issue flagged - visible on the Shipment Issues screen",
+    flag_badge: "issue flagged",
+
+    reqdet_rerequest_btn: "Re-request", modal_rerequest_title: "Re-request rejected line",
+    rerequest_help: "Edit anything that needs to change, then resend it to the commercial director - no need to recreate the request.",
+    rerequest_qty: "Qty requested", rerequest_order_qty: "Qty in distributor order",
+    rerequest_dummy: "Dummy sample (not sellable)", rerequest_notes: "What changed / note for the director",
+    rerequest_submit: "Resend for review", msg_rerequested: "Line resent for review",
+
+    reqdet_delete_request: "Delete request", reqdet_delete_item_btn: "Delete",
+    reqdet_delete_request_confirm: "Delete request {n}? This cannot be undone.",
+    reqdet_delete_item_confirm: "Delete this line? This cannot be undone.",
+    delete_reason_prompt: "Reason (optional, kept in the audit log):",
+    msg_item_deleted: "Line deleted", msg_request_deleted: "Request deleted",
 
     factory_title: "Production Queue", col_request: "Request", col_dist_showroom: "Distributor / Showroom",
     col_color: "Color", col_remaining: "Remaining", col_ship_arrow: "Ship →",
@@ -82,7 +98,14 @@ const I18N = {
     incoming_title: "Incoming from Factory",
     incoming_help: "Approved samples not yet fully in the downtown warehouse. Watch \"days since last update\" for items stuck for months.",
     col_outstanding: "Outstanding (never shipped)", col_pending_receive: "Pending receipt",
-    incoming_empty: "Nothing outstanding from the factory.",
+    incoming_empty: "Nothing outstanding from the factory.", col_flag: "Issue",
+
+    issues_title: "Shipment Issues",
+    issues_help: "Mismatches the warehouse flagged when receiving from the factory - wrong quantity, wrong SKU, damage, etc. Flagging never blocks receiving; resolve it here once it's sorted out.",
+    issues_none: "No shipment issues.", issues_filter_open: "Open", issues_filter_resolved: "Resolved",
+    col_raised_by: "Raised by", col_raised_on: "Raised on", issues_resolve_btn: "Resolve",
+    issues_resolve_prompt: "Resolution notes (optional):", msg_flag_resolved: "Issue marked resolved",
+    issues_status_open: "Open", issues_status_resolved: "Resolved",
 
     stock_title: "Warehouse Stock Control", stock_search_ph: "Search by code, family or color...",
     col_held_for: "Held for (Distributor / Showroom)", col_qty_in_warehouse: "Qty in warehouse",
@@ -154,7 +177,7 @@ const I18N = {
     nav_dashboard: "الرئيسية", nav_new_request: "طلب جديد", nav_requests: "طلبات العينات",
     nav_factory: "قائمة المصنع", nav_incoming: "الوارد", nav_stock: "مخزون العهدة",
     nav_dismissals: "موافقات الصرف", nav_returns: "تسجيل مرتجع", nav_history: "الأرشيف التاريخي",
-    nav_products: "المنتجات", nav_distributors: "الموزعون", nav_users: "المستخدمون",
+    nav_products: "المنتجات", nav_distributors: "الموزعون", nav_users: "المستخدمون", nav_issues: "مشاكل الشحن",
 
     role_admin: "مدير", role_sales_manager: "مندوب منطقة مبيعات", role_commercial_director: "المدير التجاري",
     role_factory: "المصنع", role_warehouse: "المخزن", role_assembly: "فريق التركيب",
@@ -169,6 +192,7 @@ const I18N = {
     dash_skus_in_warehouse: "أصناف متوفرة حالياً في المخزن", dash_pending_dismissals: "موافقات صرف معلقة",
     dash_ready_to_display: "موافق عليها، جاهزة للعرض", dash_dismissals_awaiting_you: "موافقات صرف بانتظارك",
     dash_in_transit: "أصناف في الطريق / متأخرة", dash_skus_short: "أصناف في المخزن",
+    dash_open_issues: "مشاكل شحن مفتوحة",
     dash_workflow_title: "سير العمل باختصار",
     dash_workflow_text: "يقوم مندوب منطقة المبيعات بإنشاء طلب عينة لصالة عرض ← يراجع المدير التجاري كل صنف مقابل طلبية الموزع ← تذهب البنود الموافق عليها للمصنع ← يقوم المصنع بالشحن (غالباً على دفعات جزئية) ← يؤكد المخزن الاستلام ← يجب الموافقة على الصرف قبل خروج أي عينة من المخزن ← يقوم فريق التركيب بعرضها في صالة العرض ← تعود المرتجعات / الاستبدالات عبر المخزن. كل خطوة مؤرخة ومنسوبة لشخص.",
 
@@ -216,6 +240,21 @@ const I18N = {
     ship_logged: "تم تسجيل الشحنة",
     recv_title: "تسجيل استلام في المخزن", recv_summary: "مشحون {s}، مستلم حتى الآن {r}، في الطريق {t}",
     recv_btn: "تسجيل الاستلام", recv_logged: "تم تسجيل الاستلام", sent_to_factory_msg: "تم الإرسال للمصنع",
+    recv_flag_btn: "الإبلاغ عن مشكلة", flag_prompt: "صف المشكلة (كمية خاطئة، كود/لون خاطئ، تلف، إلخ):",
+    msg_flag_required: "يرجى وصف المشكلة قبل الإبلاغ عنها", msg_flag_raised: "تم تسجيل المشكلة - تظهر الآن في شاشة مشاكل الشحن",
+    flag_badge: "تم رصد مشكلة",
+
+    reqdet_rerequest_btn: "إعادة الطلب", modal_rerequest_title: "إعادة طلب بند مرفوض",
+    rerequest_help: "عدّل ما يحتاج تعديلاً، ثم أعد إرساله للمدير التجاري - بدون الحاجة لإعادة إنشاء الطلب بالكامل.",
+    rerequest_qty: "الكمية المطلوبة", rerequest_order_qty: "الكمية في طلب الموزع",
+    rerequest_dummy: "عينة دمي (غير قابلة للبيع)", rerequest_notes: "ما الذي تغيّر / ملاحظة للمدير",
+    rerequest_submit: "إعادة الإرسال للمراجعة", msg_rerequested: "تم إعادة إرسال البند للمراجعة",
+
+    reqdet_delete_request: "حذف الطلب", reqdet_delete_item_btn: "حذف",
+    reqdet_delete_request_confirm: "حذف الطلب {n}؟ لا يمكن التراجع عن هذا.",
+    reqdet_delete_item_confirm: "حذف هذا البند؟ لا يمكن التراجع عن هذا.",
+    delete_reason_prompt: "السبب (اختياري، يُحفظ في سجل التدقيق):",
+    msg_item_deleted: "تم حذف البند", msg_request_deleted: "تم حذف الطلب",
 
     factory_title: "قائمة الإنتاج", col_request: "الطلب", col_dist_showroom: "الموزع / صالة العرض",
     col_color: "اللون", col_remaining: "المتبقي", col_ship_arrow: "شحن ←",
@@ -224,7 +263,14 @@ const I18N = {
     incoming_title: "الوارد من المصنع",
     incoming_help: "عينات موافق عليها لم تصل بالكامل إلى مخزن وسط البلد بعد. راقب «أيام منذ آخر تحديث» للعناصر المتأخرة لأشهر.",
     col_outstanding: "متأخر (لم يُشحن بعد)", col_pending_receive: "بانتظار الاستلام",
-    incoming_empty: "لا شيء متأخر من المصنع.",
+    incoming_empty: "لا شيء متأخر من المصنع.", col_flag: "مشكلة",
+
+    issues_title: "مشاكل الشحن",
+    issues_help: "المشاكل التي أبلغ عنها المخزن عند الاستلام من المصنع - كمية خاطئة، كود خاطئ، تلف، إلخ. الإبلاغ لا يوقف الاستلام أبداً؛ يمكن حل المشكلة من هنا بعد معالجتها.",
+    issues_none: "لا توجد مشاكل شحن.", issues_filter_open: "مفتوحة", issues_filter_resolved: "تم الحل",
+    col_raised_by: "أبلغ بواسطة", col_raised_on: "تاريخ البلاغ", issues_resolve_btn: "حل المشكلة",
+    issues_resolve_prompt: "ملاحظات الحل (اختياري):", msg_flag_resolved: "تم وضع علامة على المشكلة كمحلولة",
+    issues_status_open: "مفتوحة", issues_status_resolved: "تم الحل",
 
     stock_title: "مخزون العهدة", stock_search_ph: "ابحث بالكود أو المجموعة أو اللون...",
     col_held_for: "محجوز لـ (الموزع / صالة العرض)", col_qty_in_warehouse: "الكمية في المخزن",
