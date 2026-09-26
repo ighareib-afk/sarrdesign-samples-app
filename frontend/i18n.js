@@ -90,6 +90,14 @@ const I18N = {
     reqdet_delete_item_confirm: "Delete this line? This cannot be undone.",
     delete_reason_prompt: "Reason (optional, kept in the audit log):",
     msg_item_deleted: "Line deleted", msg_request_deleted: "Request deleted",
+    force_delete_confirm_item: "This line has already been shipped/received from the factory. Deleting it also removes those quantities from stock and audit history. Delete anyway?",
+    force_delete_confirm_request: "This request has lines already shipped/received from the factory. Deleting it also removes those quantities from stock and audit history. Delete anyway?",
+
+    reqlist_selected_count: "{n} selected",
+    bulk_delete_btn: "Delete selected",
+    bulk_delete_confirm: "Delete {n} selected request(s)? This cannot be undone.",
+    bulk_delete_force_confirm: "{n} of the selected requests have lines already shipped/received from the factory: {list}. Deleting them also removes those quantities from stock and audit history. Delete these too?",
+    bulk_delete_result: "{deleted} deleted, {blocked} skipped",
 
     factory_title: "Production Queue", col_request: "Request", col_dist_showroom: "Distributor / Showroom",
     col_color: "Color", col_remaining: "Remaining", col_ship_arrow: "Ship →",
@@ -255,6 +263,14 @@ const I18N = {
     reqdet_delete_item_confirm: "حذف هذا البند؟ لا يمكن التراجع عن هذا.",
     delete_reason_prompt: "السبب (اختياري، يُحفظ في سجل التدقيق):",
     msg_item_deleted: "تم حذف البند", msg_request_deleted: "تم حذف الطلب",
+    force_delete_confirm_item: "تم شحن/استلام هذا البند بالفعل من المصنع. حذفه سيزيل أيضاً هذه الكميات من المخزون وسجل التدقيق. هل تريد الحذف رغم ذلك؟",
+    force_delete_confirm_request: "يحتوي هذا الطلب على بنود تم شحنها/استلامها بالفعل من المصنع. حذفه سيزيل أيضاً هذه الكميات من المخزون وسجل التدقيق. هل تريد الحذف رغم ذلك؟",
+
+    reqlist_selected_count: "تم تحديد {n}",
+    bulk_delete_btn: "حذف المحدد",
+    bulk_delete_confirm: "حذف {n} طلب محدد؟ لا يمكن التراجع عن هذا.",
+    bulk_delete_force_confirm: "{n} من الطلبات المحددة تحتوي على بنود تم شحنها/استلامها بالفعل من المصنع: {list}. حذفها سيزيل أيضاً هذه الكميات من المخزون وسجل التدقيق. هل تريد حذفها أيضاً؟",
+    bulk_delete_result: "تم حذف {deleted}، تم تخطي {blocked}",
 
     factory_title: "قائمة الإنتاج", col_request: "الطلب", col_dist_showroom: "الموزع / صالة العرض",
     col_color: "اللون", col_remaining: "المتبقي", col_ship_arrow: "شحن ←",

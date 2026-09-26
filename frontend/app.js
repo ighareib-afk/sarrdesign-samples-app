@@ -72,7 +72,14 @@ async function api(method, path, body, isForm = false) {
     data = await res.json();
   }
   if (!res.ok) {
-    const msg = (data && data.detail) ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : `Error ${res.status}`;
+    let msg;
+    if (data && data.detail) {
+      if (typeof data.detail === "string") msg = data.detail;
+      else if (data.detail.message) msg = data.detail.message;
+      else msg = JSON.stringify(data.detail);
+    } else {
+      msg = `Error ${res.status}`;
+    }
     toast(msg, "error");
     const err = new Error(msg);
     err.data = data;
@@ -424,6 +431,10 @@ async function viewNewRequest() {
 async function viewRequestsList() {
   const main = renderShell("#/requests");
   const role = CURRENT_USER.role;
+  const isAdmin = role === "admin";
+  const selectedIds = new Set();     // request id -> kept selected across re-renders of the table
+  const selectedNumbers = new Map(); // request id -> request_number, for confirm/summary messages
+
   main.innerHTML = `
     <div class="card">
       <div class="flex-between">
@@ -438,9 +449,24 @@ async function viewRequestsList() {
           ${role === "sales_manager" ? `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="mineOnly" checked style="width:auto;"> ${esc(t("reqlist_mine_only"))}</label>` : ""}
         </div>
       </div>
+      ${isAdmin ? `<div id="bulkDeleteBar" class="flex-between mt" style="display:none;">
+        <span class="small muted" id="bulkDeleteCount"></span>
+        <button type="button" class="danger" id="bulkDeleteBtn">${esc(t("bulk_delete_btn"))}</button>
+      </div>` : ""}
       <div id="reqTableWrap" class="table-wrap mt"></div>
     </div>
   `;
+
+  function updateBulkBar() {
+    if (!isAdmin) return;
+    const bar = qs("#bulkDeleteBar");
+    if (selectedIds.size > 0) {
+      bar.style.display = "flex";
+      qs("#bulkDeleteCount").textContent = t("reqlist_selected_count", { n: selectedIds.size });
+    } else {
+      bar.style.display = "none";
+    }
+  }
 
   async function load() {
     const status = qs("#statusFilter").value;
@@ -454,9 +480,11 @@ async function viewRequestsList() {
     const wrap = qs("#reqTableWrap");
     if (reqs.length === 0) { wrap.innerHTML = `<div class="empty-state">${esc(t("reqlist_none"))}</div>`; return; }
     wrap.innerHTML = `<table><thead><tr>
+      ${isAdmin ? `<th><input type="checkbox" id="selectAllChk"></th>` : ""}
       <th>${esc(t("col_hash"))}</th><th>${esc(t("col_date"))}</th><th>${esc(t("col_distributor"))}</th><th>${esc(t("col_showroom"))}</th><th>${esc(t("col_sales_manager"))}</th><th>${esc(t("col_status"))}</th><th></th>
     </tr></thead><tbody>
       ${reqs.map((r) => `<tr>
+        ${isAdmin ? `<td><input type="checkbox" class="row-chk" data-id="${r.id}" data-number="${esc(r.request_number)}" ${selectedIds.has(r.id) ? "checked" : ""}></td>` : ""}
         <td>${esc(r.request_number)}</td>
         <td>${fmtDateShort(r.date_created)}</td>
         <td dir-auto>${esc(r.distributor_name)}</td>
@@ -466,11 +494,69 @@ async function viewRequestsList() {
         <td><a href="#/requests/${r.id}">${esc(t("col_open"))}</a></td>
       </tr>`).join("")}
     </tbody></table>`;
+
+    if (isAdmin) {
+      const selectAllChk = qs("#selectAllChk");
+      const rowChks = qsa(".row-chk", wrap);
+      selectAllChk.checked = rowChks.length > 0 && rowChks.every((c) => c.checked);
+      selectAllChk.addEventListener("change", () => {
+        rowChks.forEach((c) => {
+          c.checked = selectAllChk.checked;
+          const id = Number(c.dataset.id);
+          if (selectAllChk.checked) { selectedIds.add(id); selectedNumbers.set(id, c.dataset.number); }
+          else { selectedIds.delete(id); selectedNumbers.delete(id); }
+        });
+        updateBulkBar();
+      });
+      rowChks.forEach((c) => c.addEventListener("change", () => {
+        const id = Number(c.dataset.id);
+        if (c.checked) { selectedIds.add(id); selectedNumbers.set(id, c.dataset.number); }
+        else { selectedIds.delete(id); selectedNumbers.delete(id); }
+        selectAllChk.checked = rowChks.every((x) => x.checked);
+        updateBulkBar();
+      }));
+      updateBulkBar();
+    }
   }
 
   qs("#statusFilter").addEventListener("change", load);
   const mineEl = qs("#mineOnly");
   if (mineEl) mineEl.addEventListener("change", load);
+
+  if (isAdmin) {
+    qs("#bulkDeleteBtn").addEventListener("click", async () => {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      if (!confirm(t("bulk_delete_confirm", { n: ids.length }))) return;
+      const reason = prompt(t("delete_reason_prompt")) || "";
+
+      let res;
+      try {
+        res = await api("POST", "/requests/bulk-delete", { request_ids: ids, reason: reason || null, force: false });
+      } catch (e) { return; /* toast shown */ }
+
+      const blocked = res.results.filter((x) => x.reason === "shipped");
+      if (blocked.length) {
+        const list = blocked.map((x) => x.request_number).join(", ");
+        if (confirm(t("bulk_delete_force_confirm", { n: blocked.length, list }))) {
+          try {
+            const res2 = await api("POST", "/requests/bulk-delete", {
+              request_ids: blocked.map((x) => x.id), reason: reason || null, force: true,
+            });
+            res.deleted_count += res2.deleted_count;
+            res.blocked_count = res.blocked_count - blocked.length + res2.blocked_count;
+          } catch (e) { /* toast shown */ }
+        }
+      }
+
+      toast(t("bulk_delete_result", { deleted: res.deleted_count, blocked: res.blocked_count }),
+        res.deleted_count > 0 ? "success" : "info");
+      selectedIds.clear();
+      selectedNumbers.clear();
+      load();
+    });
+  }
+
   load();
 }
 
@@ -493,7 +579,9 @@ async function viewRequestDetail(id) {
   const canReceive = role === "warehouse";
   const canReRequest = role === "admin" || (role === "sales_manager" && r.sales_manager_id === CURRENT_USER.id);
   const canDeleteItems = role === "admin";
-  const requestDeletable = role === "admin" && r.items.length > 0 && r.items.every((it) => it.qty_shipped_from_factory === 0);
+  // admin can always delete a request in one click; if some lines already shipped/
+  // received, the click handler below asks for an explicit force-confirm first
+  const requestDeletable = role === "admin" && r.items.length > 0;
 
   main.innerHTML = `
     <div class="card">
@@ -576,11 +664,22 @@ async function viewRequestDetail(id) {
   if (deleteReqBtn) deleteReqBtn.addEventListener("click", async () => {
     if (!confirm(t("reqdet_delete_request_confirm", { n: r.request_number }))) return;
     const reason = prompt(t("delete_reason_prompt")) || "";
+    const qsBase = reason ? "?reason=" + encodeURIComponent(reason) : "";
     try {
-      await api("DELETE", `/requests/${id}${reason ? "?reason=" + encodeURIComponent(reason) : ""}`);
+      await api("DELETE", `/requests/${id}${qsBase}`);
       toast(t("msg_request_deleted"), "success");
       location.hash = "#/requests";
-    } catch (err) { /* toast shown */ }
+    } catch (err) {
+      if (err.data && err.data.detail && err.data.detail.code === "shipped_lines") {
+        if (!confirm(t("force_delete_confirm_request"))) return;
+        try {
+          const sep = qsBase ? "&" : "?";
+          await api("DELETE", `/requests/${id}${qsBase}${sep}force=true`);
+          toast(t("msg_request_deleted"), "success");
+          location.hash = "#/requests";
+        } catch (err2) { /* toast shown */ }
+      }
+    }
   });
 }
 
@@ -638,7 +737,7 @@ function renderItems(r, perms) {
       <td>${it.director_notes ? `<span class="small muted" title="${esc(it.director_notes)}">note</span>` : ""}</td>
       <td>
         ${perms.canReRequest && it.status === "rejected" ? `<button type="button" class="ghost rerequest-btn" data-id="${it.id}">${esc(t("reqdet_rerequest_btn"))}</button>` : ""}
-        ${perms.canDeleteItems && it.qty_shipped_from_factory === 0 ? `<button type="button" class="ghost delete-item-btn" data-id="${it.id}">${esc(t("reqdet_delete_item_btn"))}</button>` : ""}
+        ${perms.canDeleteItems ? `<button type="button" class="ghost delete-item-btn" data-id="${it.id}">${esc(t("reqdet_delete_item_btn"))}</button>` : ""}
       </td>
     </tr>`).join("")}
   </tbody></table></div>`;
@@ -650,12 +749,24 @@ function renderItems(r, perms) {
   qsa(".delete-item-btn", wrap).forEach((btn) => btn.addEventListener("click", async () => {
     if (!confirm(t("reqdet_delete_item_confirm"))) return;
     const reason = prompt(t("delete_reason_prompt")) || "";
+    const qsBase = reason ? "?reason=" + encodeURIComponent(reason) : "";
     try {
-      const res = await api("DELETE", `/requests/${r.id}/items/${btn.dataset.id}${reason ? "?reason=" + encodeURIComponent(reason) : ""}`);
+      const res = await api("DELETE", `/requests/${r.id}/items/${btn.dataset.id}${qsBase}`);
       toast(t("msg_item_deleted"), "success");
       if (res && res.request_deleted) location.hash = "#/requests";
       else viewRequestDetail(r.id);
-    } catch (e) { /* toast shown */ }
+    } catch (e) {
+      if (e.data && e.data.detail && e.data.detail.code === "shipped_lines") {
+        if (!confirm(t("force_delete_confirm_item"))) return;
+        try {
+          const sep = qsBase ? "&" : "?";
+          const res2 = await api("DELETE", `/requests/${r.id}/items/${btn.dataset.id}${qsBase}${sep}force=true`);
+          toast(t("msg_item_deleted"), "success");
+          if (res2 && res2.request_deleted) location.hash = "#/requests";
+          else viewRequestDetail(r.id);
+        } catch (e2) { /* toast shown */ }
+      }
+    }
   }));
 
   if (perms.canReview) {
