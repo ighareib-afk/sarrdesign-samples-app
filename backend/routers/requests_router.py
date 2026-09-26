@@ -212,28 +212,40 @@ def re_request_item(item_id: int, payload: schemas.ItemReRequestIn, db: Session 
 
 
 def _item_is_deletable(item: models.SampleRequestItem) -> bool:
-    """Safe to delete only before anything has actually left the factory for it -
-    past that point, deleting it would leave shipment/stock numbers inconsistent."""
+    """Safe to delete without a second thought - nothing has actually left the
+    factory for it yet, so removing it doesn't touch any real stock/shipment
+    numbers. Once something has shipped, deleting is still allowed but only via
+    force=true (see delete_item / delete_request), since at that point the
+    quantities are load-bearing for stock/audit history."""
     return item.qty_shipped_from_factory == 0 and len(item.shipments) == 0
 
 
 @router.delete("/{request_id}/items/{item_id}")
-def delete_item(request_id: int, item_id: int, reason: Optional[str] = None, db: Session = Depends(get_db),
+def delete_item(request_id: int, item_id: int, reason: Optional[str] = None, force: bool = False,
+                 db: Session = Depends(get_db),
                  user: models.User = Depends(require_roles(models.Role.ADMIN))):
     """Admin-only: remove a single wrongly-entered line. Blocked once the factory
-    has shipped anything for it. If it's the request's last line, the whole
-    (now-empty) request is removed too."""
+    has shipped anything for it unless force=true, in which case those
+    shipped/received quantities are removed from stock/audit history too (noted
+    in the audit log). If it's the request's last line, the whole (now-empty)
+    request is removed too."""
     r = db.query(models.SampleRequest).filter(models.SampleRequest.id == request_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     item = next((i for i in r.items if i.id == item_id), None)
     if not item:
         raise HTTPException(status_code=404, detail="Item not on this request")
-    if not _item_is_deletable(item):
-        raise HTTPException(status_code=400, detail="This line has already been shipped from the factory and can no longer be deleted")
+    if not _item_is_deletable(item) and not force:
+        raise HTTPException(status_code=400, detail={
+            "code": "shipped_lines",
+            "message": "This line has already been shipped/received from the factory. Force-delete to remove it anyway.",
+        })
 
     code = item.product.code if item.product else str(item.product_id)
-    detail = f"{r.request_number}: deleted line {code} (qty {item.qty_requested})"
+    forced_note = ""
+    if not _item_is_deletable(item):
+        forced_note = f" [FORCED - removed already-shipped/received qty: shipped {item.qty_shipped_from_factory}, received {item.qty_received_warehouse}]"
+    detail = f"{r.request_number}: deleted line {code} (qty {item.qty_requested}){forced_note}"
     if reason:
         detail += f" - reason: {reason}"
     log_action(db, user, "sample_request_item", item.id, "delete", detail)
@@ -262,30 +274,76 @@ def delete_item(request_id: int, item_id: int, reason: Optional[str] = None, db:
     return {"deleted": True, "request_deleted": False}
 
 
-@router.delete("/{request_id}")
-def delete_request(request_id: int, reason: Optional[str] = None, db: Session = Depends(get_db),
-                    user: models.User = Depends(require_roles(models.Role.ADMIN))):
-    """Admin-only: remove an entire wrongly-entered request. Blocked if any of its
-    lines have already been shipped from the factory - delete just the unshipped
-    lines individually in that case."""
-    r = db.query(models.SampleRequest).filter(models.SampleRequest.id == request_id).first()
-    if not r:
-        raise HTTPException(status_code=404, detail="Request not found")
+def _delete_request_core(db: Session, user: models.User, r: models.SampleRequest,
+                          reason: Optional[str], force: bool):
+    """Shared by the single-request and bulk delete endpoints. Returns
+    (success, blocked_reason, detail_message); blocked_reason is "shipped" when
+    the request has already-shipped/received lines and force wasn't set."""
     undeletable = [i for i in r.items if not _item_is_deletable(i)]
-    if undeletable:
+    if undeletable and not force:
         codes = ", ".join(i.product.code if i.product else str(i.id) for i in undeletable)
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete: already shipped from the factory for: {codes}. Delete the remaining unshipped lines individually instead.",
-        )
+        return False, "shipped", f"Already shipped/received from the factory for: {codes}. Force-delete to remove anyway."
 
-    detail = f"{r.request_number} deleted ({len(r.items)} line(s))"
+    forced_note = ""
+    if undeletable:
+        parts = [
+            f"{(i.product.code if i.product else i.id)} (shipped {i.qty_shipped_from_factory}, received {i.qty_received_warehouse})"
+            for i in undeletable
+        ]
+        forced_note = f" [FORCED - removed already-shipped/received qty: {', '.join(parts)}]"
+
+    detail = f"{r.request_number} deleted ({len(r.items)} line(s)){forced_note}"
     if reason:
         detail += f" - reason: {reason}"
     log_action(db, user, "sample_request", r.id, "delete", detail)
     db.delete(r)
     db.commit()
+    return True, None, None
+
+
+@router.delete("/{request_id}")
+def delete_request(request_id: int, reason: Optional[str] = None, force: bool = False,
+                    db: Session = Depends(get_db),
+                    user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    """Admin-only: remove an entire wrongly-entered request in one action. Blocked
+    if any of its lines have already been shipped from the factory, unless
+    force=true - in which case those shipped/received quantities are removed
+    from stock/audit history too (noted in the audit log)."""
+    r = db.query(models.SampleRequest).filter(models.SampleRequest.id == request_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    ok, blocked_reason, detail = _delete_request_core(db, user, r, reason, force)
+    if not ok:
+        raise HTTPException(status_code=400, detail={"code": "shipped_lines", "message": detail})
     return {"deleted": True}
+
+
+@router.post("/bulk-delete")
+def bulk_delete_requests(payload: schemas.BulkDeleteRequestsIn, db: Session = Depends(get_db),
+                          user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    """Admin-only: delete several requests in one action (e.g. clearing leftover
+    demo/training data). Each request is evaluated independently, so one being
+    blocked by already-shipped lines doesn't stop the others from being deleted.
+    Pass force=true to also remove requests that have shipped/received lines."""
+    results = []
+    deleted_count = 0
+    blocked_count = 0
+    for rid in payload.request_ids:
+        r = db.query(models.SampleRequest).filter(models.SampleRequest.id == rid).first()
+        if not r:
+            results.append({"id": rid, "request_number": None, "deleted": False, "reason": "not_found"})
+            blocked_count += 1
+            continue
+        request_number = r.request_number
+        ok, blocked_reason, detail = _delete_request_core(db, user, r, payload.reason, payload.force)
+        if ok:
+            results.append({"id": rid, "request_number": request_number, "deleted": True})
+            deleted_count += 1
+        else:
+            results.append({"id": rid, "request_number": request_number, "deleted": False,
+                             "reason": blocked_reason, "detail": detail})
+            blocked_count += 1
+    return {"results": results, "deleted_count": deleted_count, "blocked_count": blocked_count}
 
 
 @router.post("/{request_id}/send-to-factory")
