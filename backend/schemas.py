@@ -161,3 +161,10 @@ class ShipmentFlagIn(BaseModel):
 
 class FlagResolveIn(BaseModel):
     resolution_notes: Optional[str] = None
+
+
+# ---------- Bulk delete (clearing several wrongly-entered / demo requests at once) ----------
+class BulkDeleteRequestsIn(BaseModel):
+    request_ids: List[int]
+    reason: Optional[str] = None
+    force: bool = False
