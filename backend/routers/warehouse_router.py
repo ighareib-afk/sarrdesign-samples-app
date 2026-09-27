@@ -1,15 +1,29 @@
+import io
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import openpyxl
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 import serializers
+import seed
 from auth import get_current_user, log_action, require_roles
 from database import get_db
 
 router = APIRouter(prefix="/api/warehouse", tags=["warehouse"])
+
+STOCK_CORRECTION_DISTRIBUTOR_NAME = "Sarrdesign - Weekly Stock Correction (Internal)"
+STOCK_CORRECTION_SHOWROOM_NAME = "Weekly Stock Correction"
+
+# Placeholder distributors whose items are "ours to adjust" when reconciling stock -
+# the original one-time opening-balance import, plus this recurring weekly one.
+# Real distributor/showroom activity is never touched by the stock-correction import.
+INTERNAL_STOCK_DISTRIBUTOR_NAMES = {
+    seed.OPENING_STOCK_DISTRIBUTOR_NAME,
+    STOCK_CORRECTION_DISTRIBUTOR_NAME,
+}
 
 
 def recompute_item_status(item: models.SampleRequestItem):
@@ -182,6 +196,228 @@ def stock(q: Optional[str] = None, db: Session = Depends(get_db),
             "showroom_name": i.request.showroom.name if i.request.showroom else None,
         })
     return out
+
+
+def _next_request_number(db: Session) -> str:
+    last = db.query(models.SampleRequest).order_by(models.SampleRequest.id.desc()).first()
+    n = 244
+    if last and last.request_number:
+        try:
+            n = int(last.request_number.split("-")[-1])
+        except ValueError:
+            n = 244
+    return f"SD-{n + 1:04d}"
+
+
+def _get_or_create_correction_showroom(db: Session, admin: models.User):
+    dist = db.query(models.Distributor).filter(
+        models.Distributor.name == STOCK_CORRECTION_DISTRIBUTOR_NAME
+    ).first()
+    if dist:
+        showroom = db.query(models.Showroom).filter(
+            models.Showroom.distributor_id == dist.id,
+            models.Showroom.name == STOCK_CORRECTION_SHOWROOM_NAME,
+        ).first()
+        if showroom:
+            return dist, showroom
+    else:
+        dist = models.Distributor(
+            name=STOCK_CORRECTION_DISTRIBUTOR_NAME,
+            type=models.PartnerType.DISTRIBUTOR,
+            brand="Sarrdesign",
+            notes=(
+                "Internal placeholder, not a real distributor. Holds the running "
+                "per-SKU correction used to reconcile Warehouse Stock against the "
+                "team's weekly physical stock-count file. Updated in place each "
+                "week - it does not accumulate a separate row per week."
+            ),
+        )
+        db.add(dist)
+        db.flush()
+    showroom = models.Showroom(
+        distributor_id=dist.id,
+        name=STOCK_CORRECTION_SHOWROOM_NAME,
+        address="N/A - placeholder location for weekly stock reconciliation, not a physical showroom",
+        min_order_qty=0,
+    )
+    db.add(showroom)
+    db.flush()
+    return dist, showroom
+
+
+@router.post("/stock-correction/import")
+def import_stock_correction(file: UploadFile = File(...), db: Session = Depends(get_db),
+                             user: models.User = Depends(require_roles(models.Role.ADMIN))):
+    """
+    Reconcile Warehouse Stock against the team's weekly stock-count Excel file
+    (same format as the original opening-stock ledger: a 'Samples request'-like
+    sheet with code in column C and quantity in column F, header rows first).
+
+    For every recognized SKU, the app's current total warehouse stock for that
+    SKU (summed across every request item for that product) is corrected to
+    match the quantity in the file - a blank/empty quantity cell means zero.
+    The correction is applied by adjusting a single dedicated per-SKU entry
+    (under an internal 'Weekly Stock Correction' placeholder) so re-running
+    this import replaces last week's correction rather than stacking a new one.
+    """
+    content = file.file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read this file as an Excel (.xlsx) workbook")
+
+    ws = None
+    for name in wb.sheetnames:
+        if name.strip().lower() == "samples request":
+            ws = wb[name]
+            break
+    if ws is None:
+        for name in wb.sheetnames:
+            if "sample" in name.strip().lower():
+                ws = wb[name]
+                break
+    if ws is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No 'Samples request' sheet found. Sheets in this file: {', '.join(wb.sheetnames)}",
+        )
+
+    # code = column C (3), qty = column F (6); rows 1-2 are headers/section labels.
+    # Real SKU codes all start with "SD" - filters out family/section header rows
+    # (e.g. a family name in Arabic sitting alone in column C).
+    file_data = {}
+    for row in ws.iter_rows(min_row=3, values_only=True):
+        if not row or len(row) < 6:
+            continue
+        raw_code = row[2]
+        if raw_code is None:
+            continue
+        code = str(raw_code).strip()
+        if not code.upper().startswith("SD"):
+            continue
+        qty = row[5]
+        qty = int(qty) if isinstance(qty, (int, float)) else 0
+        file_data[code] = qty
+
+    if not file_data:
+        raise HTTPException(status_code=400, detail="No SKU rows found in this file (expected codes starting with 'SD' in column C)")
+
+    admin_user = db.query(models.User).filter(models.User.role == models.Role.ADMIN).first() or user
+    _, correction_showroom = _get_or_create_correction_showroom(db, admin_user)
+
+    updated, created, unchanged = [], [], []
+    unmatched = []
+    capped = []
+
+    for code, target in sorted(file_data.items()):
+        product = db.query(models.Product).filter(models.Product.code == code).first()
+        if not product:
+            if target > 0:
+                unmatched.append({"code": code, "qty": target})
+            continue
+
+        all_items = db.query(models.SampleRequestItem).filter(
+            models.SampleRequestItem.product_id == product.id
+        ).all()
+        current_total = sum(i.qty_in_warehouse for i in all_items)
+
+        # "Ours to adjust": any item sitting under the opening-balance or weekly-
+        # correction placeholders. Everything else (real distributor/showroom
+        # activity) is left alone. If more than one such item exists for this SKU
+        # (e.g. both an opening-balance entry and an older correction entry),
+        # they're consolidated into the first one found and the rest zeroed out,
+        # so a SKU only ever carries one internal placeholder line going forward.
+        internal_items = [
+            i for i in all_items
+            if i.request.distributor and i.request.distributor.name in INTERNAL_STOCK_DISTRIBUTOR_NAMES
+        ]
+        internal_total = sum(i.qty_in_warehouse for i in internal_items)
+        other_total = current_total - internal_total
+
+        desired_internal_val = target - other_total
+        new_internal_val = max(0, desired_internal_val)
+        if desired_internal_val < 0:
+            # Real (non-internal) stock alone already exceeds this week's count -
+            # can't reduce below what isn't ours to touch.
+            capped.append({
+                "code": code, "target": target, "reachable_total": other_total + new_internal_val,
+            })
+
+        primary = internal_items[0] if internal_items else None
+        extra_internal = internal_items[1:]
+
+        if primary:
+            old_val = internal_total
+            if new_internal_val != old_val:
+                delta = new_internal_val - primary.qty_in_warehouse
+                if delta > 0:
+                    db.add(models.WarehouseReceipt(
+                        item_id=primary.id, qty_received=delta, received_by=admin_user.id,
+                        notes=f"Weekly stock correction ({file.filename})",
+                    ))
+                primary.qty_received_warehouse = primary.qty_received_warehouse + delta
+                primary.qty_requested = primary.qty_received_warehouse
+                primary.qty_approved = primary.qty_received_warehouse
+                primary.status = models.ItemStatus.FULLY_RECEIVED
+                for extra in extra_internal:
+                    if extra.qty_in_warehouse:
+                        extra.qty_received_warehouse = extra.qty_assigned_showroom
+                        extra.status = models.ItemStatus.FULLY_RECEIVED
+                log_action(db, user, "product", product.id, "stock_correction",
+                           f"code={code} {old_val} -> {new_internal_val} (file target {target})")
+                updated.append({"code": code, "previous_total": current_total, "new_total": other_total + new_internal_val, "delta": new_internal_val - old_val})
+            else:
+                unchanged.append({"code": code, "total": current_total})
+        elif new_internal_val > 0:
+            req = models.SampleRequest(
+                request_number=_next_request_number(db),
+                sales_manager_id=admin_user.id,
+                distributor_id=correction_showroom.distributor_id,
+                showroom_id=correction_showroom.id,
+                purpose="stock_correction",
+                distributor_order_ref=f"Weekly stock correction import ({file.filename})",
+                status=models.RequestStatus.FULLY_RECEIVED,
+                notes="Auto-managed weekly stock correction entry - not a real distributor request.",
+            )
+            db.add(req)
+            db.flush()
+            item = models.SampleRequestItem(
+                request_id=req.id, product_id=product.id, qty_requested=new_internal_val,
+                is_dummy=product.default_dummy if product.default_dummy is not None else True,
+                sku_matches_stock=True, min_order_met=True, qty_approved=new_internal_val,
+                status=models.ItemStatus.FULLY_RECEIVED,
+                qty_shipped_from_factory=new_internal_val, qty_received_warehouse=new_internal_val,
+            )
+            db.add(item)
+            db.flush()
+            shipment = models.FactoryShipment(
+                item_id=item.id, qty_sent=new_internal_val, batch_ref="STOCK-CORRECTION", created_by=admin_user.id,
+            )
+            db.add(shipment)
+            db.flush()
+            db.add(models.WarehouseReceipt(
+                item_id=item.id, factory_shipment_id=shipment.id, qty_received=new_internal_val,
+                received_by=admin_user.id, notes=f"Weekly stock correction ({file.filename})",
+            ))
+            log_action(db, user, "product", product.id, "stock_correction",
+                       f"code={code} 0 -> {new_internal_val} (file target {target}, new entry)")
+            created.append({"code": code, "previous_total": current_total, "new_total": other_total + new_internal_val})
+        else:
+            unchanged.append({"code": code, "total": current_total})
+
+    log_action(db, user, "product", 0, "stock_correction_import",
+               f"file={file.filename} skus_in_file={len(file_data)} updated={len(updated)} "
+               f"created={len(created)} unmatched={len(unmatched)} capped={len(capped)}")
+    db.commit()
+
+    return {
+        "skus_in_file": len(file_data),
+        "updated": updated,
+        "created": created,
+        "unchanged_count": len(unchanged),
+        "unmatched": unmatched,
+        "capped": capped,
+    }
 
 
 # ---------------------------------------------------------------------------
