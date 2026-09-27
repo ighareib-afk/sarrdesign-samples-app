@@ -940,9 +940,57 @@ async function viewWarehouseIncoming() {
 
 async function viewWarehouseStock() {
   const main = renderShell("#/warehouse/stock");
-  main.innerHTML = `<div class="card"><h2>${esc(t("stock_title"))}</h2>
-    <div class="tag-search"><input id="q" placeholder="${esc(t("stock_search_ph"))}"></div>
-    <div id="wrap"><p class="muted">${esc(t("loading"))}</p></div></div>`;
+  const isAdmin = CURRENT_USER.role === "admin";
+  main.innerHTML = `<div class="card">
+    <div class="flex-between">
+      <h2 style="margin:0;">${esc(t("stock_title"))}</h2>
+      ${isAdmin ? `<form id="stockCorrForm" class="row" style="max-width:420px;">
+        <input type="file" id="stockCorrFile" accept=".xlsx">
+        <button type="submit" class="secondary">${esc(t("stock_correction_btn"))}</button>
+      </form>` : ""}
+    </div>
+    <div class="tag-search mt"><input id="q" placeholder="${esc(t("stock_search_ph"))}"></div>
+    <div id="corrResult"></div>
+    <div id="wrap" class="mt"><p class="muted">${esc(t("loading"))}</p></div></div>`;
+
+  if (isAdmin) {
+    qs("#stockCorrForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = qs("#stockCorrFile").files[0];
+      if (!f) return;
+      if (!confirm(t("stock_correction_confirm"))) return;
+      const fd = new FormData(); fd.append("file", f);
+      try {
+        const res = await api("POST", "/warehouse/stock-correction/import", fd, true);
+        renderStockCorrectionResult(res);
+        toast(t("stock_correction_done", { u: res.updated.length, c: res.created.length }), "success");
+        load();
+      } catch (err) { /* toast shown */ }
+    });
+  }
+
+  function renderStockCorrectionResult(res) {
+    const box = qs("#corrResult");
+    if (!box) return;
+    const changedRows = [...res.updated, ...res.created];
+    let html = `<div class="card" style="background:var(--panel-2,#f6f6f6);">
+      <p><b>${esc(t("stock_correction_summary", { file: res.skus_in_file, u: res.updated.length, c: res.created.length, n: res.unchanged_count }))}</b></p>`;
+    if (changedRows.length) {
+      html += `<details><summary>${esc(t("stock_correction_view_changes"))} (${changedRows.length})</summary>
+        <div class="table-wrap"><table><thead><tr><th>${esc(t("col_code"))}</th><th>${esc(t("stock_correction_old"))}</th><th>${esc(t("stock_correction_new"))}</th></tr></thead><tbody>
+        ${changedRows.map((r) => `<tr><td>${esc(r.code)}</td><td>${r.previous_total}</td><td><b>${r.new_total}</b></td></tr>`).join("")}
+        </tbody></table></div></details>`;
+    }
+    if (res.unmatched && res.unmatched.length) {
+      html += `<p class="small" style="color:#b45309;">${esc(t("stock_correction_unmatched"))}: ${res.unmatched.map((u) => `${esc(u.code)} (${u.qty})`).join(", ")}</p>`;
+    }
+    if (res.capped && res.capped.length) {
+      html += `<p class="small" style="color:#b91c1c;">${esc(t("stock_correction_capped"))}: ${res.capped.map((c) => `${esc(c.code)} (${t("stock_correction_capped_target")}=${c.target}, ${t("stock_correction_capped_reachable")}=${c.reachable_total})`).join(", ")}</p>`;
+    }
+    html += `</div>`;
+    box.innerHTML = html;
+  }
+
   async function load() {
     const q = qs("#q").value;
     const items = await api("GET", `/warehouse/stock${q ? "?q=" + encodeURIComponent(q) : ""}`);
